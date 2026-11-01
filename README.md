@@ -63,11 +63,11 @@ Plataforma web de gestión de activos digitales desarrollada con Laravel 10, con
 
 ![API Postman](screenshots/12-api-postman.jpg)
 
-### 🤖 RAG — Chat con la base de datos
+### 🤖 Chat con la plataforma en lenguaje natural
 
-![RAG Inicio](screenshots/15-rag-inicio.jpg)
+![Chat inicio](screenshots/15-rag-inicio.jpg)
 
-![RAG Conversación](screenshots/16-rag-conversacion.jpg)
+![Chat conversación](screenshots/16-rag-conversacion.jpg)
 
 ## 🏗️ Arquitectura
 
@@ -86,7 +86,7 @@ graph TB
 
     subgraph EXT["☁️ Servicios externos"]
         CLOUDINARY["Cloudinary<br/>Almacenamiento de archivos"]
-        GEMINI["Google Gemini API<br/>Vision · NLP · RAG · Variants"]
+        GEMINI["Google Gemini API<br/>Vision · NL2Query · Chat · Variants"]
         SUPABASE["Supabase<br/>PostgreSQL"]
     end
 
@@ -129,17 +129,17 @@ sequenceDiagram
 
 ## 🛠️ Stack tecnológico
 
-| Capa                 | Tecnología                       |
-| -------------------- | -------------------------------- |
-| Backend              | Laravel 10 (PHP 8.2)             |
-| Base de datos        | MySQL                            |
-| Autenticación API    | Laravel Sanctum                  |
-| IA                   | Google Gemini API                |
-| Almacenamiento       | Cloudinary                       |
-| Tests                | Pest 2.x + PHPUnit               |
-| CI/CD                | GitHub Actions                   |
-| Frontend             | Vue 3 (repo separado)            |
-| Control de versiones | Git + GitHub                     |
+| Capa                 | Tecnología                                              |
+| -------------------- | ------------------------------------------------------- |
+| Backend              | Laravel 10 (PHP 8.2)                                    |
+| Base de datos        | MySQL (desarrollo local) · PostgreSQL en Supabase (producción) |
+| Autenticación API    | Laravel Sanctum                                         |
+| IA                   | Google Gemini API (gemini-2.5-flash)                    |
+| Almacenamiento       | Cloudinary                                              |
+| Tests                | Pest 2.x + PHPUnit                                      |
+| CI/CD                | GitHub Actions                                          |
+| Frontend             | Vue 3 (repo separado)                                   |
+| Control de versiones | Git + GitHub                                            |
 
 ## ⚙️ Instalación local
 
@@ -202,7 +202,7 @@ php artisan serve
 | Gestionar usuarios   | ✅    | ❌     | ❌     |
 | Acceso a API         | ✅    | ✅     | ✅     |
 
-## 🤖 Integración con IA — Tres sistemas Gemini trabajando juntos
+## 🤖 Integración con IA — Cinco funcionalidades
 
 ### 1. Gemini Vision — Análisis visual real de imágenes
 
@@ -227,13 +227,13 @@ El usuario escribe en lenguaje humano y la IA convierte la búsqueda en filtros 
 
 Endpoint: `POST /api/search` con `{"query": "tu búsqueda en lenguaje natural"}`
 
-### 3. Sistema de detección de duplicados — Dos niveles
+### 3. Detección de duplicados — Dos niveles
 
-**Nivel 1 — Hash MD5 (instantáneo):**
-Si alguien sube el mismo archivo exacto, se detecta al 100% por su hash MD5 sin gastar ninguna petición a la IA. El archivo se rechaza automáticamente.
+**Nivel 1 — Hash MD5 (instantáneo, sin IA):**
+Al subir un archivo se calcula su hash MD5 y se compara con los ya guardados. Si coincide, el archivo es idéntico: se rechaza con un 409 sin gastar ninguna petición a la IA. MD5 se usa aquí solo para deduplicar, no con fines de seguridad.
 
-**Nivel 2 — IA semántica (Gemini):**
-Si el archivo es diferente pero el contenido es similar (> 70%), Gemini lo detecta comparando descripciones y tags. El archivo se sube pero se avisa al usuario.
+**Nivel 2 — Similitud semántica con Gemini:**
+Si el archivo es distinto pero su contenido se parece, Gemini compara la descripción y los tags del nuevo asset con los de los últimos 200 assets procesados y devuelve los que considera similares (umbral indicado en el prompt: > 70 %). El archivo se sube igualmente y se avisa al usuario. Es una valoración del modelo sobre texto, no una comparación con embeddings.
 
 ### 4. Gemini AI Variants — Generador de variantes y sugerencias
 
@@ -251,9 +251,13 @@ Las sugerencias son interactivas — el usuario puede aplicar cualquiera con un 
 - Sugerencias: _"Valle Alpino: Río Turquesa y Picos Nevados"_, _"Paisaje Montañoso con Río Glaciar Turquesa"_
 - Tags adicionales sugeridos: `glaciar`, `picos nevados`, `coníferas`, `escénico`, `aire libre`
 
-### 5. RAG — Chat con tu base de datos en lenguaje natural
+### 5. Chat con la plataforma — context injection sobre datos SQL
 
-Tecnología utilizada por Google, Microsoft y OpenAI internamente. El usuario puede hacer preguntas en lenguaje natural sobre los datos reales de la plataforma y la IA responde consultando la base de datos.
+El usuario hace preguntas en lenguaje natural sobre los datos reales de la plataforma.
+
+**Cómo funciona:** el backend calcula estadísticas agregadas con consultas SQL (total de assets, procesados y pendientes, por tipo, subidas de hoy/semana/mes, usuario más activo, últimos assets, usuarios por rol, actividad reciente y espacio ocupado) y las guarda en caché 5 minutos. Esos datos se inyectan como contexto en un prompt a Gemini 2.5 Flash, que debe responder únicamente con la información proporcionada.
+
+**Limitaciones deliberadas:** no usa embeddings ni base de datos vectorial, así que no es un sistema RAG con recuperación semántica. Responde sobre estadísticas agregadas, no sobre el contenido individual de cada asset. Y aunque el prompt restringe la respuesta a los datos del contexto, al ser un LLM puede equivocarse al interpretarlos.
 
 **Ejemplos reales:**
 
@@ -262,9 +266,7 @@ Tecnología utilizada por Google, Microsoft y OpenAI internamente. El usuario pu
 - _"¿Cuál es el usuario más activo?"_ → _"El usuario más activo es RuBeNesKy con 10 assets subidos."_
 - _"¿Cuánto espacio ocupan los assets?"_ → _"El espacio total ocupado es de 1.35 MB."_
 
-La IA no inventa datos — consulta la base de datos real en tiempo real y responde únicamente con información verificada.
-
-Endpoint: `POST /api/rag` con `{"question": "tu pregunta en lenguaje natural"}`
+Endpoint: `POST /api/rag` con `{"question": "tu pregunta en lenguaje natural"}` (el nombre del endpoint y de `RAGService` es histórico; ver "Limitaciones deliberadas").
 
 ### Metadatos generados automáticamente
 
@@ -273,8 +275,6 @@ Endpoint: `POST /api/rag` con `{"question": "tu pregunta en lenguaje natural"}`
 - **Etiquetas** relevantes en español (3-5 tags)
 
 El usuario puede editar los metadatos. Los generados por IA se marcan con ✨ en la interfaz.
-
-Esta tecnología es similar a la que usan plataformas como Freepik internamente para indexar millones de recursos digitales.
 
 ## 🌐 API REST
 
@@ -402,7 +402,7 @@ app/
 │   │   ├── Api/
 │   │   │   ├── AssetApiController.php
 │   │   │   ├── AuthApiController.php
-│   │   │   ├── RAGController.php
+│   │   │   ├── RAGController.php          # chat sobre datos de la plataforma
 │   │   │   └── SearchApiController.php
 │   │   ├── Admin/UserController.php
 │   │   └── DashboardController.php
@@ -417,7 +417,7 @@ app/
 ├── Services/
 │   ├── GeminiService.php
 │   ├── CloudinaryService.php
-│   ├── RAGService.php
+│   ├── RAGService.php                     # context injection (agregados SQL → prompt)
 │   ├── NaturalLanguageSearchService.php
 │   ├── DuplicateDetectionService.php
 │   └── AIVariantsService.php
